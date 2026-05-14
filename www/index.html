@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>XOX Hotspot</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:Arial;-webkit-tap-highlight-color:transparent}
+body{background:#0d1117;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+h1{color:#58a6ff;margin-bottom:10px;font-size:24px}
+#lobby{position:fixed;top:0;left:0;width:100%;height:100%;background:#0d1117;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;padding:20px}
+#lobby button{padding:16px 32px;margin:8px;background:#238636;color:#fff;border:none;border-radius:8px;font-size:18px;font-weight:bold;width:100%;max-width:280px}
+#lobby button:active{background:#2ea043}
+#lobby input{padding:14px;margin:8px;border-radius:8px;border:2px solid #30363d;background:#21262d;color:#fff;text-align:center;font-size:18px;width:100%;max-width:280px}
+#ipBox{margin:15px;padding:15px;background:#161b22;border-radius:8px;border:2px solid #30363d;width:100%;max-width:280px;text-align:center}
+#ipBox b{color:#58a6ff;font-size:18px}
+.small{font-size:13px;color:#8b949e;margin:5px 0;text-align:center;line-height:1.4}
+#status{font-size:18px;margin:15px 0;color:#f0883e;font-weight:bold;min-height:24px;text-align:center}
+#board{display:grid;grid-template-columns:repeat(3,90px);grid-template-rows:repeat(3,90px);gap:6px;background:#161b22;padding:6px;border-radius:12px;margin:10px 0}
+.cell{width:90px;height:90px;background:#21262d;border:2px solid #30363d;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:50px;font-weight:bold;cursor:pointer}
+.cell:active{background:#30363d}
+.cell.x{color:#da3633}
+.cell.o{color:#58a6ff}
+.cell.disabled{cursor:not-allowed;opacity:0.6}
+#info{font-size:14px;color:#8b949e;margin-top:10px}
+#youare{color:#f0883e;font-weight:bold}
+</style>
+</head>
+<body>
+<div id="lobby">
+  <h1>XOX HOTSPOT</h1>
+  <div class="small">Step 1: Host turns on WiFi Hotspot<br>Step 2: Others connect to hotspot</div>
+  <button id="hostBtn">HOST GAME</button>
+  <div id="ipBox" style="display:none">
+    <div class="small">Friends join this IP:</div>
+    <b id="hostIP">-</b>
+    <div class="small">Waiting for player...</div>
+  </div>
+  <div style="margin:15px 0">OR</div>
+  <input id="joinIP" placeholder="192.168.43.1" value="192.168.43.1">
+  <button id="joinBtn">JOIN GAME</button>
+  <div id="errText" class="small" style="color:#da3633;margin-top:10px"></div>
+</div>
+
+<h1>XOX GAME</h1>
+<div id="status">Waiting...</div>
+<div id="board">
+  <div class="cell" data-i="0"></div><div class="cell" data-i="1"></div><div class="cell" data-i="2"></div>
+  <div class="cell" data-i="3"></div><div class="cell" data-i="4"></div><div class="cell" data-i="5"></div>
+  <div class="cell" data-i="6"></div><div class="cell" data-i="7"></div><div class="cell" data-i="8"></div>
+</div>
+<div id="info">You are: <span id="youare">-</span></div>
+
+<script>
+let board = ["","","","","","","","",""];
+let currentPlayer = "X";
+let gameActive = false;
+let myPlayer = "";
+let ws = null;
+let isHost = false;
+
+const statusDiv = document.getElementById('status');
+const cells = document.querySelectorAll('.cell');
+const youareDiv = document.getElementById('youare');
+const errText = document.getElementById('errText');
+const wins = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+
+function updateBoard(){
+  cells.forEach((cell,i) => {
+    cell.textContent = board[i];
+    cell.className = 'cell';
+    if(board[i]) cell.classList.add(board[i].toLowerCase());
+    if(!gameActive || myPlayer!== currentPlayer || board[i]) cell.classList.add('disabled');
+  });
+}
+
+function checkWin(){
+  return wins.some(c => c.every(i => board[i] === currentPlayer && board[i]!== ""));
+}
+
+function handleClick(e){
+  if(!gameActive || myPlayer!== currentPlayer) return;
+  const i = e.target.dataset.i;
+  if(board[i]!== "") return;
+  board[i] = currentPlayer;
+  sendMsg({t:'move',i:i,p:currentPlayer});
+  afterMove();
+}
+
+function afterMove(){
+  updateBoard();
+  if(checkWin()){
+    statusDiv.textContent = `Player ${currentPlayer} Wins!`;
+    gameActive = false;
+    setTimeout(resetGame, 2500);
+    return;
+  }
+  if(board.every(c => c!== "")){
+    statusDiv.textContent = "Draw!";
+    gameActive = false;
+    setTimeout(resetGame, 2500);
+    return;
+  }
+  currentPlayer = currentPlayer === "X"? "O" : "X";
+  statusDiv.textContent = `Player ${currentPlayer} Turn`;
+  updateBoard();
+}
+
+function resetGame(){
+  board = ["","","","","","","","",""];
+  currentPlayer = "X";
+  gameActive = true;
+  statusDiv.textContent = `Player ${currentPlayer} Turn`;
+  updateBoard();
+}
+
+function sendMsg(data){
+  const msg = JSON.stringify(data);
+  if(ws && ws.readyState === 1) ws.send(msg);
+}
+
+function handleMsg(data){
+  if(data.t === 'move'){
+    board[data.i] = data.p;
+    afterMove();
+  }
+  if(data.t === 'start'){
+    myPlayer = data.yourPlayer;
+    youareDiv.textContent = myPlayer;
+    document.getElementById('lobby').style.display = 'none';
+    gameActive = true;
+    statusDiv.textContent = `Player ${currentPlayer} Turn`;
+    updateBoard();
+  }
+}
+
+async function startHost(){
+  isHost = true;
+  myPlayer = "X";
+  youareDiv.textContent = myPlayer;
+  errText.textContent = "";
+
+  // This plugin works in 2026
+  if(!window.Capacitor ||!window.Capacitor.Plugins.WebSocketServer){
+    errText.textContent = "Plugin missing. Rebuild APK.";
+    return;
+  }
+
+  try {
+    const WSServer = window.Capacitor.Plugins.WebSocketServer;
+    const result = await WSServer.start({port: 8080});
+
+    document.getElementById('ipBox').style.display = 'block';
+    document.getElementById('hostIP').textContent = result.address + ':8080';
+
+    WSServer.addListener('clientConnected', (info) => {
+      WSServer.send({connId: info.connId, data: JSON.stringify({t:'start', yourPlayer:'O'})});
+      document.getElementById('lobby').style.display = 'none';
+      gameActive = true;
+      statusDiv.textContent = `Player ${currentPlayer} Turn`;
+      updateBoard();
+    });
+
+    WSServer.addListener('message', (info) => {
+      handleMsg(JSON.parse(info.data));
+    });
+
+  } catch(e) {
+    errText.textContent = 'Host error: ' + e.message;
+  }
+}
+
+function joinGame(){
+  let ip = document.getElementById('joinIP').value.trim() || '192.168.43.1';
+  errText.textContent = "Connecting...";
+
+  ws = new WebSocket(`ws://${ip}:8080`);
+  ws.onopen = () => { errText.textContent = "Connected! Waiting for host..."; };
+  ws.onmessage = (e) => { handleMsg(JSON.parse(e.data)); };
+  ws.onerror = () => { errText.textContent = "Failed. Check hotspot & IP"; };
+  ws.onclose = () => {
+    statusDiv.textContent = "Disconnected";
+    gameActive = false;
+    document.getElementById('lobby').style.display = 'flex';
+  };
+}
+
+cells.forEach(c => c.onclick = handleClick);
+document.getElementById('hostBtn').onclick = startHost;
+document.getElementById('joinBtn').onclick = joinGame;
+</script>
+</body>
+</html>
