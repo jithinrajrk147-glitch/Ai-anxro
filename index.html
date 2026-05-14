@@ -1,374 +1,163 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>TXT to Styled PDF (Folder & Multiple Files)</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>XOX WiFi P2P</title>
 <style>
-  body {
-    background: #f0f0f0;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    text-align: center;
-    padding: 20px;
-    color: #333;
-  }
-  .container {
-    background: white;
-    max-width: 720px;
-    margin: 0 auto;
-    padding: 25px;
-    border-radius: 12px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-  }
-  .control-group {
-    margin: 12px 0;
-    text-align: left;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  input[type="file"], button {
-    padding: 10px;
-    margin: 10px 0;
-    width: 100%;
-    box-sizing: border-box;
-  }
-  input[type="color"] {
-    border: none;
-    width: 50px;
-    height: 30px;
-    cursor: pointer;
-  }
-  button {
-    background-color: #2c3e50;
-    color: white;
-    border: none;
-    border-radius: 5px;
-    font-weight: bold;
-    cursor: pointer;
-    transition: 0.3s;
-  }
-  button:hover {
-    background-color: #1a252f;
-  }
-  label { font-weight: 600; font-size: 14px; margin-right: 12px; }
-  .small-input { width: 80px; }
-  .inline { display:inline-flex; align-items:center; gap:8px; }
-  #progress { text-align:left; margin-top:10px; color:#444; font-size:14px; min-height:22px; }
+*{margin:0;padding:0;box-sizing:border-box;font-family:Arial;-webkit-tap-highlight-color:transparent}
+body{background:#0d1117;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+h1{color:#58a6ff;margin-bottom:10px;font-size:24px}
+#lobby{position:fixed;top:0;left:0;width:100%;height:100%;background:#0d1117;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;padding:20px}
+#lobby button{padding:16px 32px;margin:8px;background:#238636;color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:bold;width:100%;max-width:300px}
+#lobby button:active{background:#2ea043}
+#lobby textarea{width:100%;max-width:300px;height:80px;margin:8px;background:#21262d;color:#fff;border:2px solid #30363d;border-radius:8px;padding:8px;font-size:12px}
+.small{font-size:12px;color:#8b949e;margin:5px 0;text-align:center}
+#status{font-size:18px;margin:15px 0;color:#f0883e;font-weight:bold;min-height:24px;text-align:center}
+#board{display:grid;grid-template-columns:repeat(3,90px);grid-template-rows:repeat(3,90px);gap:6px;background:#161b22;padding:6px;border-radius:12px;margin:10px 0}
+.cell{width:90px;height:90px;background:#21262d;border:2px solid #30363d;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:50px;font-weight:bold;cursor:pointer}
+.cell:active{background:#30363d}
+.cell.x{color:#da3633}
+.cell.o{color:#58a6ff}
+.cell.disabled{cursor:not-allowed;opacity:0.6}
+#youare{color:#f0883e;font-weight:bold}
 </style>
 </head>
 <body>
+<div id="lobby">
+  <h1>XOX WiFi P2P</h1>
+  <div class="small">1. Both phones connect to SAME WiFi hotspot<br>2. One clicks CREATE, other clicks JOIN</div>
+  <button id="createBtn">CREATE GAME</button>
+  <textarea id="offerText" placeholder="1. Click CREATE GAME\n2. Copy this text\n3. Send to friend via WhatsApp"></textarea>
+  <textarea id="answerText" placeholder="Friend pastes their text here, then click JOIN"></textarea>
+  <button id="joinBtn">JOIN GAME</button>
+</div>
 
-  <div class="container">
-    <h2>TXT ➜ Styled PDF (Folder & Multiple Files)</h2>
+<h1>XOX WiFi</h1>
+<div id="status">Connecting...</div>
+<div id="board">
+  <div class="cell" data-i="0"></div><div class="cell" data-i="1"></div><div class="cell" data-i="2"></div>
+  <div class="cell" data-i="3"></div><div class="cell" data-i="4"></div><div class="cell" data-i="5"></div>
+  <div class="cell" data-i="6"></div><div class="cell" data-i="7"></div><div class="cell" data-i="8"></div>
+</div>
+<div class="small">You are: <span id="youare">-</span></div>
 
-    <p style="font-size:13px; color:#666; margin-top:0;">
-      Select a folder (or multiple .txt files). Use the checkboxes to create a combined PDF and/or download a ZIP of all individual PDFs.
-      Note: folder upload uses the browser's directory picker (webkitdirectory). Not all browsers show folders identically.
-    </p>
+<script>
+let board = ["","","","","","","","",""];
+let currentPlayer = "X";
+let gameActive = false;
+let myPlayer = "";
+let pc, dc;
 
-    <!-- Accept multiple files and folder upload -->
-    <input type="file" id="fileInput" accept=".txt" multiple webkitdirectory directory />
+const statusDiv = document.getElementById('status');
+const cells = document.querySelectorAll('.cell');
+const youareDiv = document.getElementById('youare');
+const wins = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
 
-    <div class="control-group">
-      <label>Words per page (approx):</label>
-      <input type="number" id="wordsPerPage" value="200" min="50" max="1000" class="small-input">
-    </div>
+function updateBoard(){
+  cells.forEach((cell,i) => {
+    cell.textContent = board[i];
+    cell.className = 'cell';
+    if(board[i]) cell.classList.add(board[i].toLowerCase());
+    if(!gameActive || myPlayer!== currentPlayer || board[i]) cell.classList.add('disabled');
+  });
+}
 
-    <div class="control-group">
-      <label>Font size (pt):</label>
-      <input type="number" id="fontSize" value="16" min="8" max="40" class="small-input">
-    </div>
+function checkWin(){
+  return wins.some(c => c.every(i => board[i] === currentPlayer && board[i]!== ""));
+}
 
-    <div class="control-group">
-      <label>Line Spacing (Multiplier):</label>
-      <input type="range" id="lineSpacing" min="1.0" max="4.0" step="0.1" value="2.2" style="width: 70%;">
-    </div>
+function handleClick(e){
+  if(!gameActive || myPlayer!== currentPlayer) return;
+  const i = e.target.dataset.i;
+  if(board[i]!== "") return;
 
-    <hr>
+  board[i] = currentPlayer;
+  dc.send(JSON.stringify({t:'move', i:i, p:currentPlayer}));
+  afterMove();
+}
 
-    <div class="control-group">
-      <label>Background Color:</label>
-      <input type="color" id="bgColor" value="#fdf6e3">
-    </div>
+function afterMove(){
+  updateBoard();
+  if(checkWin()){
+    statusDiv.textContent = `Player ${currentPlayer} Wins!`;
+    gameActive = false;
+    setTimeout(resetGame, 2000);
+    return;
+  }
+  if(board.every(c => c!== "")){
+    statusDiv.textContent = "Draw!";
+    gameActive = false;
+    setTimeout(resetGame, 2000);
+    return;
+  }
+  currentPlayer = currentPlayer === "X"? "O" : "X";
+  statusDiv.textContent = `Player ${currentPlayer} Turn`;
+  updateBoard();
+}
 
-    <div class="control-group">
-      <label>Border Color:</label>
-      <input type="color" id="borderColor" value="#c0a060">
-    </div>
+function resetGame(){
+  board = ["","","","","","","","",""];
+  currentPlayer = "X";
+  gameActive = true;
+  statusDiv.textContent = `Player ${currentPlayer} Turn`;
+  updateBoard();
+}
 
-    <div class="control-group">
-      <label>Text Color:</label>
-      <input type="color" id="textColor" value="#3b2f2f">
-    </div>
-
-    <div style="margin:12px 0; display:flex; gap:12px; justify-content:flex-start; align-items:center;">
-      <label class="inline"><input type="checkbox" id="makeCombined" checked> Create combined PDF</label>
-      <label class="inline"><input type="checkbox" id="makeZip" checked> Download ZIP of individual PDFs</label>
-    </div>
-
-    <button id="convertBtn">Convert & Download</button>
-
-    <div id="progress"></div>
-  </div>
-
-  <script>
-    const { jsPDF } = window.jspdf;
-
-    function hexToRgb(hex) {
-      const r = parseInt(hex.slice(1, 3), 16);
-      const g = parseInt(hex.slice(3, 5), 16);
-      const b = parseInt(hex.slice(5, 7), 16);
-      return { r, g, b };
-    }
-
-    function updateProgress(text) {
-      const el = document.getElementById('progress');
-      el.textContent = text;
-    }
-
-    // Populate a pdf object with the provided text and styling options.
-    // Continues onto new pages as necessary. Returns nothing; footer is added after writing.
-    function populatePdfWithText(pdf, text, options, fileTitle) {
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-
-      function drawPageStyles() {
-        pdf.setFillColor(options.bg.r, options.bg.g, options.bg.b);
-        pdf.rect(0, 0, pageWidth, pageHeight, "F");
-        pdf.setDrawColor(options.border.r, options.border.g, options.border.b);
-        pdf.setLineWidth(3);
-        pdf.rect(25, 25, pageWidth - 50, pageHeight - 50);
+function setupConnection(){
+  pc.ondatachannel = e => {
+    dc = e.channel;
+    dc.onopen = startGame;
+    dc.onmessage = e => {
+      const data = JSON.parse(e.data);
+      if(data.t === 'move'){
+        board[data.i] = data.p;
+        afterMove();
       }
+    };
+  };
+}
 
-      // Start first page
-      drawPageStyles();
-      let y = 90;
+function startGame(){
+  document.getElementById('lobby').style.display = 'none';
+  gameActive = true;
+  statusDiv.textContent = `Player ${currentPlayer} Turn`;
+  updateBoard();
+}
 
-      pdf.setFont("Times", "normal");
-      pdf.setFontSize(options.fontSize);
-      pdf.setTextColor(options.text.r, options.text.g, options.text.b);
+document.getElementById('createBtn').onclick = async () => {
+  myPlayer = "X";
+  youareDiv.textContent = myPlayer;
+  pc = new RTCPeerConnection({iceServers:[]});
+  setupConnection();
+  dc = pc.createDataChannel("game");
+  dc.onopen = startGame;
+  dc.onmessage = e => {
+    const data = JSON.parse(e.data);
+    if(data.t === 'move'){ board[data.i] = data.p; afterMove(); }
+  };
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  setTimeout(() => {
+    document.getElementById('offerText').value = JSON.stringify(pc.localDescription);
+  }, 1000);
+};
 
-      const lineHeight = options.fontSize * options.spacing;
+document.getElementById('joinBtn').onclick = async () => {
+  myPlayer = "O";
+  youareDiv.textContent = myPlayer;
+  pc = new RTCPeerConnection({iceServers:[]});
+  setupConnection();
+  const offer = JSON.parse(document.getElementById('offerText').value);
+  await pc.setRemoteDescription(offer);
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  setTimeout(() => {
+    document.getElementById('answerText').value = JSON.stringify(pc.localDescription);
+    alert('Copy the ANSWER text and send it back to host');
+  }, 1000);
+};
 
-      // Optionally, write a heading for this file
-      if (fileTitle) {
-        pdf.setFont("Times", "bold");
-        pdf.setFontSize(options.fontSize + 2);
-        // wrap title if long
-        const wrappedTitle = pdf.splitTextToSize(fileTitle, pageWidth - 120);
-        wrappedTitle.forEach(ln => {
-          if (y > pageHeight - 80) {
-            pdf.addPage();
-            drawPageStyles();
-            y = 90;
-            pdf.setFont("Times", "normal");
-            pdf.setFontSize(options.fontSize);
-            pdf.setTextColor(options.text.r, options.text.g, options.text.b);
-          }
-          pdf.text(ln, 60, y);
-          y += lineHeight;
-        });
-        y += lineHeight * 0.5;
-        pdf.setFont("Times", "normal");
-        pdf.setFontSize(options.fontSize);
-      }
-
-      // Break into sentences for nicer spacing
-      const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
-
-      sentences.forEach(sentence => {
-        const clean = sentence.trim();
-        if (!clean) return;
-
-        const wrapped = pdf.splitTextToSize(clean, pageWidth - 120);
-
-        wrapped.forEach(line => {
-          if (y > pageHeight - 80) {
-            pdf.addPage();
-            drawPageStyles();
-            y = 90;
-            pdf.setFont("Times", "normal");
-            pdf.setFontSize(options.fontSize);
-            pdf.setTextColor(options.text.r, options.text.g, options.text.b);
-          }
-          pdf.text(line, 60, y);
-          y += lineHeight;
-        });
-
-        // Additional gap between sentence blocks
-        y += (lineHeight * 0.5);
-      });
-
-      // Add footer page numbers for the pages currently in the pdf
-      const total = pdf.getNumberOfPages();
-      for (let p = 1; p <= total; p++) {
-        pdf.setPage(p);
-        pdf.setFont("Times", "italic");
-        pdf.setFontSize(10);
-        pdf.setTextColor(options.text.r, options.text.g, options.text.b);
-        pdf.text(`Page ${p}`, pageWidth / 2, pageHeight - 40, { align: "center" });
-      }
-      // leave current page as last page
-      pdf.setPage(pdf.getNumberOfPages());
-    }
-
-    async function convertAllFiles(fileList) {
-      const files = Array.from(fileList).filter(f => f.name.toLowerCase().endsWith('.txt'));
-      if (files.length === 0) {
-        alert("No .txt files found in selection.");
-        return;
-      }
-
-      // Collect options from UI
-      const bg = hexToRgb(document.getElementById('bgColor').value);
-      const border = hexToRgb(document.getElementById('borderColor').value);
-      const textCol = hexToRgb(document.getElementById('textColor').value);
-      const spacingMult = parseFloat(document.getElementById('lineSpacing').value);
-
-      const fontSizeUser = parseInt(document.getElementById('fontSize').value, 10) || 16;
-      const wordsPerPage = parseInt(document.getElementById('wordsPerPage').value, 10) || 200;
-      const makeCombined = document.getElementById('makeCombined').checked;
-      const makeZip = document.getElementById('makeZip').checked;
-
-      const options = {
-        bg,
-        border,
-        text: textCol,
-        spacing: spacingMult,
-        fontSize: fontSizeUser,
-        wordsPerPage,
-      };
-
-      // Sort files consistently by relative path if available, otherwise by name
-      files.sort((a, b) => {
-        const pa = a.webkitRelativePath || a.name;
-        const pb = b.webkitRelativePath || b.name;
-        return pa.localeCompare(pb, undefined, { numeric: true, sensitivity: 'base' });
-      });
-
-      updateProgress(`Found ${files.length} .txt file(s). Reading...`);
-
-      // Read all files
-      const fileTexts = await Promise.all(files.map(f => f.text().then(t => ({ file: f, text: t }))));
-
-      // Prepare ZIP container if needed
-      const zip = makeZip ? new JSZip() : null;
-
-      // For combined PDF we create a single jsPDF and append in sequence
-      const combinedPdf = makeCombined ? new jsPDF({ unit: "pt", format: "a4" }) : null;
-      if (combinedPdf) {
-        // ensure first page styles are set when we start populating
-      }
-
-      // Process each file: create individual PDF and add to zip (and append to combined)
-      for (let idx = 0; idx < fileTexts.length; idx++) {
-        const { file, text } = fileTexts[idx];
-        updateProgress(`Processing ${idx+1}/${fileTexts.length}: ${file.name} ...`);
-
-        // Create individual PDF
-        const pdf = new jsPDF({ unit: "pt", format: "a4" });
-        populatePdfWithText(pdf, text, options, null); // no per-file title inside individual
-        const blob = pdf.output('blob');
-
-        // Add the PDF blob to ZIP if requested
-        if (zip) {
-          const outName = file.name.replace(/\.txt$/i, "") + "_Custom.pdf";
-          zip.file(outName, blob);
-        }
-
-        // For combined PDF, append the file content. If not first page and current y near top, continue.
-        if (combinedPdf) {
-          // If combinedPdf is empty (just created) we need to ensure first page has styles.
-          // We'll populate by calling populatePdfWithText on the combinedPdf, passing the file name as title.
-          // But populatePdfWithText always adds footer numbers for pages currently in the pdf — that will renumber
-          // everything per current page count. To avoid messing up page numbers across files, we create a temporary pdf
-          // for the file, then import pages into combinedPdf by rendering content into combined. However jsPDF doesn't
-          // provide an easy import/merge from Blob across versions. Simpler approach: append the text directly into combinedPdf.
-          populatePdfWithText(combinedPdf, text, options, file.name);
-          // NOTE: populatePdfWithText adds page numbers for the pages in combinedPdf, but they'll be re-written as we append more pages
-          // so after all files are appended we will re-number all pages once below.
-        }
-      }
-
-      updateProgress("Finalizing downloads...");
-
-      // If combined PDF created, we want to write consistent page numbers across the entire combined doc.
-      if (combinedPdf) {
-        const total = combinedPdf.getNumberOfPages();
-        const pageWidth = combinedPdf.internal.pageSize.getWidth();
-        const pageHeight = combinedPdf.internal.pageSize.getHeight();
-        for (let p = 1; p <= total; p++) {
-          combinedPdf.setPage(p);
-          combinedPdf.setFont("Times", "italic");
-          combinedPdf.setFontSize(10);
-          combinedPdf.setTextColor(options.text.r, options.text.g, options.text.b);
-          combinedPdf.text(`Page ${p}`, pageWidth / 2, pageHeight - 40, { align: "center" });
-        }
-        // Download combined PDF
-        const combinedName = "Combined_All_Files_Custom.pdf";
-        const combinedBlob = combinedPdf.output('blob');
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(combinedBlob);
-        a.download = combinedName;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        updateProgress(prev => prev + "\nCombined PDF downloaded.");
-      }
-
-      // If ZIP requested, generate zip and download
-      if (zip) {
-        const zipName = "All_PDFs.zip";
-        const content = await zip.generateAsync({ type: "blob" });
-        const aZip = document.createElement('a');
-        aZip.href = URL.createObjectURL(content);
-        aZip.download = zipName;
-        document.body.appendChild(aZip);
-        aZip.click();
-        aZip.remove();
-      } else {
-        // If not zipping, provide each PDF as a download individually (trigger downloads sequentially)
-        // But to avoid multiple pop-ups we instead prompt user to individually save by creating anchors for each blob.
-        // For convenience, we will still trigger automatic downloads for each file (may be blocked by popup blockers).
-        for (let i = 0; i < fileTexts.length; i++) {
-          const name = fileTexts[i].file.name.replace(/\.txt$/i, "") + "_Custom.pdf";
-          // Recreate the pdf again to get the blob (or we could have stored blobs earlier). We'll generate again quickly.
-          const pdf = new jsPDF({ unit: "pt", format: "a4" });
-          populatePdfWithText(pdf, fileTexts[i].text, options, null);
-          const blob = pdf.output('blob');
-          const a = document.createElement('a');
-          a.href = URL.createObjectURL(blob);
-          a.download = name;
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-        }
-      }
-
-      updateProgress("Conversion finished.");
-      // Clear progress after a short delay
-      setTimeout(() => updateProgress(""), 2500);
-    }
-
-    document.getElementById('convertBtn').addEventListener('click', async () => {
-      const files = document.getElementById('fileInput').files;
-      if (!files || files.length === 0) {
-        alert("Please select a folder or one or more .txt files first!");
-        return;
-      }
-      try {
-        document.getElementById('convertBtn').disabled = true;
-        await convertAllFiles(files);
-      } catch (err) {
-        console.error(err);
-        alert("An error occurred: " + (err.message || err));
-      } finally {
-        document.getElementById('convertBtn').disabled = false;
-      }
-    });
-  </script>
+cells.forEach(c => c.onclick = handleClick);
+</script>
 </body>
 </html>
